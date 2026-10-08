@@ -1,0 +1,77 @@
+services:
+  # -----------------------------------------------
+  # 1. THE OLTP LAYER (Simulated Application Backend)
+  # -----------------------------------------------
+  postgres:
+    image: postgres:15
+    container_name: wwi_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${DB_PORT}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # -----------------------------------------------
+  # 2. THE OLAP LAYER (Modern Data Lakehouse)
+  # -----------------------------------------------
+  seaweedfs:
+    image: chrislusf/seaweedfs
+    container_name: wwi_seaweedfs
+    ports:
+      - "8333:8333" # S3 API Port
+      - "9333:9333" # Master Node UI
+      - "8888:8888" # Volume Node UI
+    command: "server -s3 -dir=/data"
+    volumes:
+      - seaweed_data:/data
+
+  nessie:
+    image: projectnessie/nessie:latest
+    container_name: wwi_nessie
+    ports:
+      - "19120:19120" # Nessie API Port
+
+  trino:
+    image: trinodb/trino:latest
+    container_name: wwi_trino
+    ports:
+      - "8080:8080" # Trino UI / JDBC Port
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog
+    depends_on:
+      - seaweedfs
+      - nessie
+
+  # -----------------------------------------------
+  # 3. THE INTERFACES & ORCHESTRATION
+  # -----------------------------------------------
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:latest
+    container_name: wwi_cloudbeaver
+    ports:
+      - "8978:8978" # CloudBeaver Web UI
+    volumes:
+      - cloudbeaver_data:/opt/cloudbeaver/workspace
+
+  airflow:
+    image: apache/airflow:2.7.1
+    container_name: wwi_airflow
+    ports:
+      - "8081:8080" # Airflow UI
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+      - ./src:/opt/airflow/dags 
+      - ./data:/opt/airflow/data 
+      - ./.env:/opt/airflow/.env 
+    command: standalone 
+
+volumes:
+  pgdata:
+    name: wwi_pgdata
+  seaweed_data:
+  cloudbeaver_data:
